@@ -218,6 +218,7 @@ class API(object):
 
     def delete(self, endpoint='/'):
         request = self.request(endpoint, method='DELETE')
+        return self.response(request)
 
 
 class Plugin:
