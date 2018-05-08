@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='kafka-connect-python',
-      version='0.0.1',
+      version='0.0.2',
       description='Kafka Connect Module',
       url='http://github.com/sxnxl/kafka-connect-python',
       author='Senol Korkmaz',
