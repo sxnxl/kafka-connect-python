@@ -108,7 +108,7 @@ class Connector:
     def restart(self):
         self._api.post('/connectors/{}/restart'.format(self.name))
 
-    def restart(self):
+    def pause(self):
         self._api.put('/connectors/{}/pause'.format(self.name))
 
     def resume(self):
