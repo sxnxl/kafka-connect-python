@@ -5,11 +5,27 @@ import json
 
 __all__ = ['KafkaConnect']
 
-class KafkaConnectError(Exception):
-    pass
+class Error(RuntimeError):
+    retriable: bool = False
+    code: int = 0
+
+    def __str__(self):
+        if not self.args:
+            return self.__class__.__name__
+        return '{0}: {1}'.format(self.__class__.__name__,
+                                super().__str__())
+
+class RebalanceError(Error):
+    retriable = True
+    code = 409
+
+class NotFoundError(Error):
+    code = 404
+
 
 class TaskStatus:
     """ TaskStatus Type """
+
     __slots__ = 'id', 'state', 'worker_id'
 
     def __init__(self, id, state, worker_id):
@@ -20,6 +36,7 @@ class TaskStatus:
 
 class Task:
     """ Task Type """
+
     __slots__ = '_api', 'id', 'connector', 'config'
 
     def __init__(self, api, id, connector, config):
@@ -35,6 +52,7 @@ class Task:
         id = response.get('id')
         state = response.get('state')
         worker_id = response.get('worker_id')
+        return TaskStatus(id=id, state=state, worker_id=worker_id)
 
     def restart(self):
         self._api.post(
@@ -98,7 +116,7 @@ class Connector:
 
     @config.setter
     def config(self, value):
-        response = self._api.put(
+        self._api.put(
             "/connectors/{}/config".format(self.name), data=value)
 
     @property
@@ -159,7 +177,6 @@ class Connectors(MutableMapping):
         self._api.delete("/connectors/{}".format(name))
 
     def __iter__(self):
-        iter_keys = self.keys()
         for key in self.keys():
             yield self.__getitem__(key)
 
@@ -180,7 +197,9 @@ class API(object):
         self.port = port
         self.url = "{}://{}:{}".format(scheme, host, port)
         self.autocommit = autocommit
+        self.ping()
 
+    def ping(self):
         info = self.get()
         self.version = info.get('version')
         self.commit = info.get('commit')
@@ -200,12 +219,16 @@ class API(object):
             response = urlopen(request)
         except HTTPError as e:
             code = e.code
-            error_data = json.loads(e.read())
             if code == 404:
-                message = error_data.get('message', 'Object not found')
+                raise NotFoundError()
+            elif code == 409:
+                raise RebalanceError()
             else:
-                message = error_data.get('message', 'Unknown error')
-            raise KafkaConnectError(message)
+                raise Error()
+        except (URLError, ConnectionError, ConnectionResetError, ConnectionAbortedError):
+            raise ConnectionError()
+        except:
+            raise Error()
 
         response_data = response.read()
         if response_data:
@@ -256,17 +279,18 @@ class Plugin:
 class KafkaConnect:
     """ Kafka Connect Object """
 
-    __slots__ = 'api', 'connectors', 'plugins'
+    __slots__ = 'api', 'connectors'
 
     def __init__(self, host='localhost', port=8083, scheme='http'):
         self.api = API(host=host, port=port, scheme=scheme)
         self.connectors = Connectors(self.api)
-        plugins = self.api.get('/connector-plugins/')
-        self.plugins = dict()
 
-        for plugin in plugins:
+    @property
+    def plugins(self):  # pylint: disable=unused-variable
+        connector_plugins = self.api.get('/connector-plugins/')
+
+        for plugin in connector_plugins:
             class_name = plugin.get('class')
             type_name = plugin.get('type')
             version = plugin.get('version')
-            self.plugins[class_name] = Plugin(
-                self.api, class_name, type_name, version)
+            yield Plugin(self.api, class_name, type_name, version)
