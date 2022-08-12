@@ -1,4 +1,4 @@
-from collections import MutableMapping
+from collections.abc import MutableMapping
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import json
